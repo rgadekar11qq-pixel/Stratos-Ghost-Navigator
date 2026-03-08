@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stratos Ghost</title>
+  <link rel="stylesheet" href="popup.css">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="ghost-container">
+    <!-- Header -->
+    <header class="ghost-header">
+      <div class="ghost-logo">
+        <div class="logo-pulse"></div>
+        <span class="logo-icon">👻</span>
+        <div class="logo-text">
+          <h1>STRATOS <span class="accent">GHOST</span></h1>
+          <p class="tagline">Autonomous UI Navigator</p>
+        </div>
+      </div>
+      <div class="status-indicator" id="statusIndicator">
+        <span class="status-dot"></span>
+        <span class="status-text">IDLE</span>
+      </div>
+    </header>
+
+    <!-- Connection Status -->
+    <div class="connection-bar" id="connectionBar">
+      <span class="conn-dot"></span>
+      <span class="conn-text">Checking Brain connection...</span>
+    </div>
+
+    <!-- Command Input -->
+    <div class="command-section">
+      <label class="command-label">MISSION OBJECTIVE</label>
+      <div class="command-input-wrap">
+        <textarea
+          id="goalInput"
+          class="command-input"
+          placeholder="e.g. Search for 'AI automation tools' and extract the top 3 results..."
+          rows="3"
+          spellcheck="false"
+        ></textarea>
+        <div class="input-glow"></div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="btnStart" class="btn btn-primary">
+        <span class="btn-icon">▶</span>
+        <span class="btn-text">DEPLOY GHOST</span>
+      </button>
+      <button id="btnStop" class="btn btn-danger" disabled>
+        <span class="btn-icon">■</span>
+        <span class="btn-text">ABORT</span>
+      </button>
+    </div>
+
+    <!-- Settings -->
+    <div class="settings-section">
+      <div class="setting-row">
+        <label class="setting-label">Brain Server</label>
+        <input type="text" id="serverUrl" class="setting-input" value="http://localhost:3001" spellcheck="false">
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">Max Steps</label>
+        <input type="number" id="maxSteps" class="setting-input setting-input-sm" value="25" min="1" max="100">
+      </div>
+    </div>
+
+    <!-- Live Log -->
+    <div class="log-section">
+      <div class="log-header">
+        <span class="log-title">⚡ LIVE TELEMETRY</span>
+        <button id="btnClearLog" class="log-clear">CLEAR</button>
+      </div>
+      <div class="log-container" id="logContainer">
+        <div class="log-entry log-system">
+          <span class="log-ts">--:--:--</span>
+          <span class="log-msg">Ghost standing by. Enter a mission objective above.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step Counter -->
+    <div class="step-counter">
+      <span class="step-label">STEPS</span>
+      <span class="step-value" id="stepCount">0 / 25</span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
