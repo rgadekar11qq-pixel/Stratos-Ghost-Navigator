@@ -1,0 +1,26 @@
+# Stratos Ghost - Continuous Deployment Pipeline
+# Automatically builds and deploys the Brain to Google Cloud Run
+steps:
+  # Build the container image using Cloud Native Buildpacks
+  - name: 'gcr.io/k8s-skaffold/pack'
+    args:
+      - 'build'
+      - 'gcr.io/$PROJECT_ID/stratos-ghost-brain'
+      - '--builder=gcr.io/buildpacks/builder:v1'
+      - '--path=brain/'
+
+  # Deploy the container to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'stratos-ghost-brain'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/stratos-ghost-brain'
+      - '--region'
+      - 'europe-west1'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/stratos-ghost-brain'
