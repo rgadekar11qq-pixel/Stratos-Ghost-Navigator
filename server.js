@@ -56,7 +56,6 @@ RULES:
 6. To see content below, use SCROLL.
 7. Keep "reasoning" strictly under 20 words to save tokens.
 8. CRITICAL: If the user's goal involves searching, commenting, or submitting a form, simply typing the text is NOT the final step. You must return action: "TYPE" first. Then, on the NEXT loop, you must look for the "Submit", "Search", or "Comment" button and return action: "CLICK". DO NOT return "COMPLETE" until you visually verify the text has been submitted.
-9. CRITICAL: Keep reasoning under 15 words.
 
 Respond with ONLY this JSON (no markdown, no fences):
 {"currentStrategy":string,"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"elementName":string|null,"extractedData":object|null}
@@ -145,7 +144,7 @@ app.post('/api/analyze', async (req, res) => {
             ],
             config: {
                 temperature: 0.1,
-                maxOutputTokens: 800, // Hard cap — prevents JSON truncation
+                maxOutputTokens: 1024, // Hard cap — prevents JSON truncation
                 safetySettings,
             }
         });
@@ -172,7 +171,7 @@ app.post('/api/analyze', async (req, res) => {
             console.error('❌ [BRAIN] Full response:', JSON.stringify(response).substring(0, 500));
             // Return a safe WAIT action so the loop doesn't crash
             return res.json({
-                decision: { action: 'WAIT', tagNumber: null, value: null, reasoning: 'Recalibrating schema payload...', extractedData: null },
+                decision: { action: 'WAIT', tagNumber: null, value: null, reasoning: 'Gemini returned empty response, retrying', extractedData: null },
                 processingTime: Date.now() - startTime
             });
         }
@@ -214,8 +213,8 @@ app.post('/api/analyze', async (req, res) => {
                     action: 'WAIT',
                     tagNumber: null,
                     value: null,
-                    elementName: 'System',
-                    reasoning: 'Recalibrating schema payload...',
+                    elementName: 'System Firewall',
+                    reasoning: 'AI schema breakdown detected. Recalibrating state.',
                     extractedData: null,
                     currentStrategy: 'Recovering from malformed AI output — will retry next cycle.',
                 };
