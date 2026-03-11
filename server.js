@@ -58,7 +58,7 @@ RULES:
 8. CRITICAL: If the user's goal involves searching, commenting, or submitting a form, simply typing the text is NOT the final step. You must return action: "TYPE" first. Then, on the NEXT loop, you must look for the "Submit", "Search", or "Comment" button and return action: "CLICK". DO NOT return "COMPLETE" until you visually verify the text has been submitted.
 
 Respond with ONLY this JSON (no markdown, no fences):
-{"currentStrategy":string,"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"elementName":string|null,"extractedData":object|null}
+{"currentStrategy":string,"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"elementName":string|null,"extractedData":string|null}
 
 FIELDS:
 - currentStrategy: Briefly explain the overarching goal and what step we are currently on.
@@ -67,7 +67,7 @@ FIELDS:
 - value: The text to type, scroll direction, or null.
 - reasoning: Why this action, under 20 words.
 - elementName: Short, human-readable name for the target element, e.g. "Search Bar", "Like Button", "Comment Box". Always provide for CLICK and TYPE.
-- extractedData: Data extracted on COMPLETE, otherwise null.
+- extractedData: Data extracted on COMPLETE as a single flat string (NEVER an object or array), otherwise null.
 
 ACTIONS:
 - CLICK: click tagNumber element.
@@ -169,9 +169,10 @@ app.post('/api/analyze', async (req, res) => {
         if (!rawText) {
             console.error('❌ [BRAIN] Gemini returned empty/blocked response');
             console.error('❌ [BRAIN] Full response:', JSON.stringify(response).substring(0, 500));
-            // Return a safe WAIT action so the loop doesn't crash
+            // Return a safe 200 WAIT action so the loop doesn't crash
             return res.json({
-                decision: { action: 'WAIT', tagNumber: null, value: null, reasoning: 'Gemini returned empty response, retrying', extractedData: null },
+                success: true,
+                decision: { action: 'WAIT', tagNumber: null, value: null, elementName: 'System', reasoning: 'Recalibrating schema payload...', extractedData: null, currentStrategy: 'Gemini returned empty — retrying next cycle.' },
                 processingTime: Date.now() - startTime
             });
         }
@@ -207,14 +208,14 @@ app.post('/api/analyze', async (req, res) => {
             } catch (rescueErr) {
                 console.error('❌ [BRAIN] JSON rescue also failed:', rescueErr.message);
                 console.error('❌ [BRAIN] Raw text was:', rawText);
-                // Shock absorber — return a safe WAIT instead of crashing the loop
+                // Shock absorber — return a safe 200 WAIT instead of crashing the loop
                 console.warn('🛡️  [BRAIN] Deploying fallback WAIT action (schema breakdown)');
                 decision = {
                     action: 'WAIT',
                     tagNumber: null,
                     value: null,
-                    elementName: 'System Firewall',
-                    reasoning: 'AI schema breakdown detected. Recalibrating state.',
+                    elementName: 'System',
+                    reasoning: 'Recalibrating schema payload...',
                     extractedData: null,
                     currentStrategy: 'Recovering from malformed AI output — will retry next cycle.',
                 };
