@@ -1,0 +1,19 @@
+{
+    "name": "stratos-ghost-brain",
+    "version": "1.0.0",
+    "description": "Stratos Ghost — AI Brain Server powered by Gemini 2.5 Flash",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js"
+    },
+    "dependencies": {
+        "@google/genai": "^1.45.0",
+        "cors": "^2.8.6",
+        "dotenv": "^16.6.1",
+        "express": "^4.22.1"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
