@@ -15,7 +15,7 @@ const cors = require('cors');
 const { GoogleGenAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
 
 // ──── Config ────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
@@ -58,7 +58,7 @@ RULES:
 8. CRITICAL: If the user's goal involves searching, commenting, or submitting a form, simply typing the text is NOT the final step. You must return action: "TYPE" first. Then, on the NEXT loop, you must look for the "Submit", "Search", or "Comment" button and return action: "CLICK". DO NOT return "COMPLETE" until you visually verify the text has been submitted.
 
 Respond with ONLY this JSON (no markdown, no fences):
-{"currentStrategy":string,"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"elementName":string|null,"extractedData":string|null}
+{"currentStrategy":string,"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"elementName":string,"extractedData":string|null}
 
 FIELDS:
 - currentStrategy: Briefly explain the overarching goal and what step we are currently on.
@@ -66,7 +66,7 @@ FIELDS:
 - tagNumber: The tag number to act on (null for SCROLL, WAIT, COMPLETE).
 - value: The text to type, scroll direction, or null.
 - reasoning: Why this action, under 20 words.
-- elementName: Short, human-readable name for the target element, e.g. "Search Bar", "Like Button", "Comment Box". Always provide for CLICK and TYPE.
+- elementName: MANDATORY. A short, human-readable label for the element (e.g. "Search Bar", "Submit Button", "Comment Box", "Profile Link"). NEVER use raw tag numbers like "element 4". For WAIT/SCROLL use "System". For COMPLETE use "Result".
 - extractedData: Data extracted on COMPLETE as a single flat string (NEVER an object or array), otherwise null.
 
 ACTIONS:
@@ -172,7 +172,7 @@ app.post('/api/analyze', async (req, res) => {
             // Return a safe 200 WAIT action so the loop doesn't crash
             return res.json({
                 success: true,
-                decision: { action: 'WAIT', tagNumber: null, value: null, elementName: 'System', reasoning: 'Recalibrating schema payload...', extractedData: null, currentStrategy: 'Gemini returned empty — retrying next cycle.' },
+                decision: { action: 'WAIT', tagNumber: null, value: null, elementName: 'System', reasoning: 'Recalibrating...', extractedData: null, currentStrategy: 'Recalibrating — retrying next cycle.' },
                 processingTime: Date.now() - startTime
             });
         }
@@ -180,7 +180,7 @@ app.post('/api/analyze', async (req, res) => {
         rawText = rawText.trim();
         console.log('📥 [BRAIN] Raw Gemini response:', rawText);
 
-        // Parse the JSON — strip markdown fences and rescue truncated JSON
+        // Parse the JSON — strip markdown fences and fix broken quoting
         let cleanedText = rawText;
         if (cleanedText.startsWith('```')) {
             cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
@@ -192,34 +192,91 @@ app.post('/api/analyze', async (req, res) => {
         } catch (parseErr) {
             console.warn('⚠️  [BRAIN] Initial JSON parse failed, attempting rescue...');
 
-            // Rescue strategy: try closing truncated JSON
             let rescued = cleanedText.trim();
-            // Strip trailing incomplete string values
+
+            // Fix 1: Sanitize unescaped quotes inside string values
+            // e.g. "reasoning":"Found the "YEAR 4" section" → "reasoning":"Found the YEAR 4 section"
+            rescued = rescued.replace(/"(reasoning|elementName|currentStrategy|extractedData)"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
+                (match, key, val) => {
+                    // If parsing the match works, leave it alone
+                    try { JSON.parse(`{"${key}":"${val}"}`); return match; } catch (e) { }
+                    // Otherwise strip inner unescaped quotes
+                    const clean = val.replace(/(?<!\\)"/g, "'");
+                    return `"${key}":"${clean}"`;
+                }
+            );
+
+            // Fix 2: If extractedData is an object, stringify it inline
+            rescued = rescued.replace(/"extractedData"\s*:\s*({[^}]*(?:{[^}]*}[^}]*)*})/g,
+                (match, obj) => {
+                    try {
+                        const parsed = JSON.parse(obj);
+                        return `"extractedData":${JSON.stringify(JSON.stringify(parsed))}`;
+                    } catch (e) {
+                        // Just wrap it as a string
+                        const clean = obj.replace(/"/g, "'");
+                        return `"extractedData":"${clean}"`;
+                    }
+                }
+            );
+
+            // Fix 3: Close truncated JSON
             rescued = rescued.replace(/,\s*"[^"]*$/s, '');
-            // Count unclosed braces and close them
             const openBraces = (rescued.match(/{/g) || []).length;
             const closeBraces = (rescued.match(/}/g) || []).length;
             for (let i = 0; i < openBraces - closeBraces; i++) {
                 rescued += '}';
             }
+
             try {
                 decision = JSON.parse(rescued);
                 console.log('🩹 [BRAIN] JSON rescue successful');
             } catch (rescueErr) {
                 console.error('❌ [BRAIN] JSON rescue also failed:', rescueErr.message);
                 console.error('❌ [BRAIN] Raw text was:', rawText);
-                // Shock absorber — return a safe 200 WAIT instead of crashing the loop
                 console.warn('🛡️  [BRAIN] Deploying fallback WAIT action (schema breakdown)');
-                decision = {
-                    action: 'WAIT',
-                    tagNumber: null,
-                    value: null,
-                    elementName: 'System',
-                    reasoning: 'Recalibrating schema payload...',
-                    extractedData: null,
-                    currentStrategy: 'Recovering from malformed AI output — will retry next cycle.',
-                };
+
+                // Last resort: try regex extraction of key fields
+                const actionMatch = rawText.match(/"action"\s*:\s*"(\w+)"/);
+                const tagMatch = rawText.match(/"tagNumber"\s*:\s*(\d+|null)/);
+                const valueMatch = rawText.match(/"value"\s*:\s*"([^"]*)"/);
+                const nameMatch = rawText.match(/"elementName"\s*:\s*"([^"]*)"/);
+
+                if (actionMatch && ['CLICK', 'TYPE', 'SCROLL', 'WAIT', 'COMPLETE'].includes(actionMatch[1])) {
+                    decision = {
+                        action: actionMatch[1],
+                        tagNumber: tagMatch ? (tagMatch[1] === 'null' ? null : Number(tagMatch[1])) : null,
+                        value: valueMatch ? valueMatch[1] : null,
+                        elementName: nameMatch ? nameMatch[1] : 'System',
+                        reasoning: 'Recovered from malformed response',
+                        extractedData: null,
+                        currentStrategy: 'Regex-extracted action from broken JSON',
+                    };
+                    console.log('🩹 [BRAIN] Regex extraction recovered action:', decision.action);
+                } else {
+                    decision = {
+                        action: 'WAIT',
+                        tagNumber: null,
+                        value: null,
+                        elementName: 'System',
+                        reasoning: 'Recalibrating...',
+                        extractedData: null,
+                        currentStrategy: 'Recovering from malformed AI output — will retry next cycle.',
+                    };
+                }
             }
+        }
+
+        // If extractedData came through as an object, flatten it to string
+        if (decision.extractedData && typeof decision.extractedData === 'object') {
+            const flatten = (obj, prefix = '') => {
+                return Object.entries(obj).map(([k, v]) => {
+                    const label = prefix ? `${prefix} - ${k}` : k;
+                    if (v && typeof v === 'object') return flatten(v, label);
+                    return `${label}: ${v}`;
+                }).flat().join(', ');
+            };
+            decision.extractedData = flatten(decision.extractedData);
         }
 
         // Validate schema
@@ -255,11 +312,19 @@ app.post('/api/webhook', async (req, res) => {
     }
 
     try {
-        console.log(`📡 [BRAIN] Relaying data to Make.com: ${WEBHOOK_URL}`);
+        // Strip JSON formatting symbols for clean webhook data
+        let cleanData = String(data || '');
+        cleanData = cleanData
+            .replace(/[{}\[\]"]/g, '')     // Remove { } [ ] "
+            .replace(/,(?!\s)/g, ', ')      // Add space after commas if missing
+            .replace(/^\s+|\s+$/g, '')      // Trim whitespace
+            .replace(/\s{2,}/g, ' ');       // Collapse multiple spaces
+
+        console.log(`📡 [BRAIN] Relaying clean data to Make.com: ${WEBHOOK_URL}`);
         const webhookRes = await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ goal, data, timestamp: new Date().toISOString(), source: 'stratos-ghost' })
+            body: JSON.stringify({ goal, data: cleanData, timestamp: new Date().toISOString(), source: 'stratos-ghost' })
         });
 
         const status = webhookRes.status;
