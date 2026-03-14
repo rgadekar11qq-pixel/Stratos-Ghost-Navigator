@@ -12,10 +12,10 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
 
 // ──── Config ────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
@@ -31,8 +31,19 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// ──── Safety Settings ───────────────────────────────────────────
+const safetySettings = [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
 // ──── System Prompt ─────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are STRATOS GHOST, an autonomous UI navigator. You see a screenshot with yellow numbered tags on interactive elements.
+const SYSTEM_PROMPT = `You are an elite RPA agent called STRATOS GHOST. You see a screenshot with yellow numbered tags on interactive elements.
+
+Do not take instructions literally if they require multiple steps. Break them down.
+(e.g., If told to find a user's latest post, first search the user, then click their profile, then click the post).
 
 Decide the SINGLE next action toward the user's goal.
 
@@ -44,9 +55,19 @@ RULES:
 5. To type: CLICK the input first, then TYPE next turn.
 6. To see content below, use SCROLL.
 7. Keep "reasoning" strictly under 20 words to save tokens.
+8. CRITICAL: If the user's goal involves searching, commenting, or submitting a form, simply typing the text is NOT the final step. You must return action: "TYPE" first. Then, on the NEXT loop, you must look for the "Submit", "Search", or "Comment" button and return action: "CLICK". DO NOT return "COMPLETE" until you visually verify the text has been submitted.
 
 Respond with ONLY this JSON (no markdown, no fences):
-{"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"extractedData":object|null}
+{"currentStrategy":string,"action":"CLICK|TYPE|SCROLL|WAIT|COMPLETE","tagNumber":number|null,"value":string|null,"reasoning":string,"elementName":string,"extractedData":string|null}
+
+FIELDS:
+- currentStrategy: Briefly explain the overarching goal and what step we are currently on.
+- action: The single action to take.
+- tagNumber: The tag number to act on (null for SCROLL, WAIT, COMPLETE).
+- value: The text to type, scroll direction, or null.
+- reasoning: Why this action, under 20 words.
+- elementName: MANDATORY. A short, human-readable label for the element (e.g. "Search Bar", "Submit Button", "Comment Box", "Profile Link"). NEVER use raw tag numbers like "element 4". For WAIT/SCROLL use "System". For COMPLETE use "Result".
+- extractedData: Data extracted on COMPLETE as a single flat string (NEVER an object or array), otherwise null.
 
 ACTIONS:
 - CLICK: click tagNumber element.
@@ -54,6 +75,8 @@ ACTIONS:
 - SCROLL: value="up" or "down", tagNumber=null.
 - WAIT: page loading, tagNumber=null, value=null.
 - COMPLETE: goal done, extractedData has results, tagNumber=null, value=null.
+
+CRITICAL: Even if you are lost or cannot find the target, you MUST return valid JSON. Never output raw text.
 
 RAW JSON ONLY.`;
 
@@ -98,7 +121,9 @@ app.post('/api/analyze', async (req, res) => {
 
         console.log('📤 [BRAIN] Sending to Gemini 2.5 Flash...');
 
-        // Strip data URI prefix if present
+        // Strip data URI prefix and detect mime type
+        const mimeMatch = screenshot.match(/^data:(image\/\w+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
         const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
 
         const response = await ai.models.generateContent({
@@ -110,7 +135,7 @@ app.post('/api/analyze', async (req, res) => {
                         { text: SYSTEM_PROMPT + '\n\n' + userMessage },
                         {
                             inlineData: {
-                                mimeType: 'image/png',
+                                mimeType,
                                 data: base64Data
                             }
                         }
@@ -120,6 +145,7 @@ app.post('/api/analyze', async (req, res) => {
             config: {
                 temperature: 0.1,
                 maxOutputTokens: 1024, // Hard cap — prevents JSON truncation
+                safetySettings,
             }
         });
 
@@ -143,9 +169,10 @@ app.post('/api/analyze', async (req, res) => {
         if (!rawText) {
             console.error('❌ [BRAIN] Gemini returned empty/blocked response');
             console.error('❌ [BRAIN] Full response:', JSON.stringify(response).substring(0, 500));
-            // Return a safe WAIT action so the loop doesn't crash
+            // Return a safe 200 WAIT action so the loop doesn't crash
             return res.json({
-                decision: { action: 'WAIT', tagNumber: null, value: null, reasoning: 'Gemini returned empty response, retrying', extractedData: null },
+                success: true,
+                decision: { action: 'WAIT', tagNumber: null, value: null, elementName: 'System', reasoning: 'Recalibrating...', extractedData: null, currentStrategy: 'Recalibrating — retrying next cycle.' },
                 processingTime: Date.now() - startTime
             });
         }
@@ -153,7 +180,7 @@ app.post('/api/analyze', async (req, res) => {
         rawText = rawText.trim();
         console.log('📥 [BRAIN] Raw Gemini response:', rawText);
 
-        // Parse the JSON — strip markdown fences and rescue truncated JSON
+        // Parse the JSON — strip markdown fences and fix broken quoting
         let cleanedText = rawText;
         if (cleanedText.startsWith('```')) {
             cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
@@ -165,27 +192,91 @@ app.post('/api/analyze', async (req, res) => {
         } catch (parseErr) {
             console.warn('⚠️  [BRAIN] Initial JSON parse failed, attempting rescue...');
 
-            // Rescue strategy: try closing truncated JSON
             let rescued = cleanedText.trim();
-            // Strip trailing incomplete string values
+
+            // Fix 1: Sanitize unescaped quotes inside string values
+            // e.g. "reasoning":"Found the "YEAR 4" section" → "reasoning":"Found the YEAR 4 section"
+            rescued = rescued.replace(/"(reasoning|elementName|currentStrategy|extractedData)"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
+                (match, key, val) => {
+                    // If parsing the match works, leave it alone
+                    try { JSON.parse(`{"${key}":"${val}"}`); return match; } catch (e) { }
+                    // Otherwise strip inner unescaped quotes
+                    const clean = val.replace(/(?<!\\)"/g, "'");
+                    return `"${key}":"${clean}"`;
+                }
+            );
+
+            // Fix 2: If extractedData is an object, stringify it inline
+            rescued = rescued.replace(/"extractedData"\s*:\s*({[^}]*(?:{[^}]*}[^}]*)*})/g,
+                (match, obj) => {
+                    try {
+                        const parsed = JSON.parse(obj);
+                        return `"extractedData":${JSON.stringify(JSON.stringify(parsed))}`;
+                    } catch (e) {
+                        // Just wrap it as a string
+                        const clean = obj.replace(/"/g, "'");
+                        return `"extractedData":"${clean}"`;
+                    }
+                }
+            );
+
+            // Fix 3: Close truncated JSON
             rescued = rescued.replace(/,\s*"[^"]*$/s, '');
-            // Count unclosed braces and close them
             const openBraces = (rescued.match(/{/g) || []).length;
             const closeBraces = (rescued.match(/}/g) || []).length;
             for (let i = 0; i < openBraces - closeBraces; i++) {
                 rescued += '}';
             }
+
             try {
                 decision = JSON.parse(rescued);
                 console.log('🩹 [BRAIN] JSON rescue successful');
             } catch (rescueErr) {
                 console.error('❌ [BRAIN] JSON rescue also failed:', rescueErr.message);
                 console.error('❌ [BRAIN] Raw text was:', rawText);
-                return res.status(500).json({
-                    error: 'Gemini returned invalid JSON',
-                    rawResponse: rawText
-                });
+                console.warn('🛡️  [BRAIN] Deploying fallback WAIT action (schema breakdown)');
+
+                // Last resort: try regex extraction of key fields
+                const actionMatch = rawText.match(/"action"\s*:\s*"(\w+)"/);
+                const tagMatch = rawText.match(/"tagNumber"\s*:\s*(\d+|null)/);
+                const valueMatch = rawText.match(/"value"\s*:\s*"([^"]*)"/);
+                const nameMatch = rawText.match(/"elementName"\s*:\s*"([^"]*)"/);
+
+                if (actionMatch && ['CLICK', 'TYPE', 'SCROLL', 'WAIT', 'COMPLETE'].includes(actionMatch[1])) {
+                    decision = {
+                        action: actionMatch[1],
+                        tagNumber: tagMatch ? (tagMatch[1] === 'null' ? null : Number(tagMatch[1])) : null,
+                        value: valueMatch ? valueMatch[1] : null,
+                        elementName: nameMatch ? nameMatch[1] : 'System',
+                        reasoning: 'Recovered from malformed response',
+                        extractedData: null,
+                        currentStrategy: 'Regex-extracted action from broken JSON',
+                    };
+                    console.log('🩹 [BRAIN] Regex extraction recovered action:', decision.action);
+                } else {
+                    decision = {
+                        action: 'WAIT',
+                        tagNumber: null,
+                        value: null,
+                        elementName: 'System',
+                        reasoning: 'Recalibrating...',
+                        extractedData: null,
+                        currentStrategy: 'Recovering from malformed AI output — will retry next cycle.',
+                    };
+                }
             }
+        }
+
+        // If extractedData came through as an object, flatten it to string
+        if (decision.extractedData && typeof decision.extractedData === 'object') {
+            const flatten = (obj, prefix = '') => {
+                return Object.entries(obj).map(([k, v]) => {
+                    const label = prefix ? `${prefix} - ${k}` : k;
+                    if (v && typeof v === 'object') return flatten(v, label);
+                    return `${label}: ${v}`;
+                }).flat().join(', ');
+            };
+            decision.extractedData = flatten(decision.extractedData);
         }
 
         // Validate schema
@@ -205,7 +296,18 @@ app.post('/api/analyze', async (req, res) => {
         res.json({ decision, processingTime: elapsed });
 
     } catch (err) {
-        console.error('🔥 [BRAIN] Unhandled error:', err);
+        console.error('🔥[BRAIN] Unhandled error:', err.message);
+
+        if (err.message.includes('429') || err.message.includes('Quota') || err.message.includes('RESOURCE_EXHAUSTED')) {
+            console.log("⚠️ [BRAIN] Rate limit hit. Sending WAIT signal.");
+            return res.json({
+                success: true,
+                action: "WAIT",
+                targetBoxId: null,
+                elementName: "System Firewall",
+                reasoning: "Cooling down API rate limit. Recalibrating..."
+            });
+        }
         res.status(500).json({ error: err.message || 'Internal server error' });
     }
 });
@@ -221,11 +323,19 @@ app.post('/api/webhook', async (req, res) => {
     }
 
     try {
-        console.log(`📡 [BRAIN] Relaying data to Make.com: ${WEBHOOK_URL}`);
+        // Strip JSON formatting symbols for clean webhook data
+        let cleanData = String(data || '');
+        cleanData = cleanData
+            .replace(/[{}\[\]"]/g, '')     // Remove { } [ ] "
+            .replace(/,(?!\s)/g, ', ')      // Add space after commas if missing
+            .replace(/^\s+|\s+$/g, '')      // Trim whitespace
+            .replace(/\s{2,}/g, ' ');       // Collapse multiple spaces
+
+        console.log(`📡 [BRAIN] Relaying clean data to Make.com: ${WEBHOOK_URL}`);
         const webhookRes = await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ goal, data, timestamp: new Date().toISOString(), source: 'stratos-ghost' })
+            body: JSON.stringify({ goal, data: cleanData, timestamp: new Date().toISOString(), source: 'stratos-ghost' })
         });
 
         const status = webhookRes.status;
