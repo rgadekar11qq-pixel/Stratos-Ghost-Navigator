@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stratos Ghost</title>
   <link rel="stylesheet" href="popup.css">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
 </head>
+
 <body>
   <div class="ghost-container">
     <!-- Header -->
@@ -25,6 +29,15 @@
       </div>
     </header>
 
+    <!-- Thinking Orb (Perplexity Pulse) -->
+    <div id="thinkingOrb" class="thinking-orb">
+      <div class="orb-wrapper">
+        <div class="orb-halo"></div>
+        <div class="orb-core"></div>
+      </div>
+      <span class="orb-label">Consulting Brain...</span>
+    </div>
+
     <!-- Connection Status -->
     <div class="connection-bar" id="connectionBar">
       <span class="conn-dot"></span>
@@ -35,13 +48,19 @@
     <div class="command-section">
       <label class="command-label">MISSION OBJECTIVE</label>
       <div class="command-input-wrap">
-        <textarea
-          id="goalInput"
-          class="command-input"
-          placeholder="e.g. Search for 'AI automation tools' and extract the top 3 results..."
-          rows="3"
-          spellcheck="false"
-        ></textarea>
+        <textarea id="goalInput" class="command-input"
+          placeholder="e.g. Search for 'AI automation tools' and extract the top 3 results..." rows="3"
+          spellcheck="false"></textarea>
+        <button id="btnMic" class="btn-mic" title="Push to Talk">
+          <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="1" width="6" height="12" rx="3"></rect>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span class="mic-pulse-ring"></span>
+        </button>
         <div class="input-glow"></div>
       </div>
     </div>
@@ -62,7 +81,8 @@
     <div class="settings-section">
       <div class="setting-row">
         <label class="setting-label">Brain Server</label>
-        <input type="text" id="serverUrl" class="setting-input" value="http://localhost:3001" spellcheck="false">
+        <input type="text" id="serverUrl" class="setting-input"
+          value="https://stratos-ghost-navigator-222549729420.europe-west1.run.app" spellcheck="false">
       </div>
       <div class="setting-row">
         <label class="setting-label">Max Steps</label>
@@ -93,4 +113,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>

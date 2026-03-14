@@ -35,6 +35,6 @@
         "128": "icons/icon128.png"
     },
     "host_permissions": [
-        "http://localhost:3001/*"
+        "https://stratos-ghost-navigator-222549729420.europe-west1.run.app*"
     ]
 }

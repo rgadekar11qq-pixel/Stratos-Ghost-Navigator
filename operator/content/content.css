@@ -87,3 +87,190 @@
         transform: translate(-50%, -50%) scale(0.5);
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   CINEMATIC HUD — Glassmorphic Floating Panel
+   ═══════════════════════════════════════════════════════════════ */
+
+.stratos-hud {
+    position: fixed !important;
+    bottom: 24px !important;
+    right: 24px !important;
+    width: 340px !important;
+    padding: 16px 20px !important;
+    background: rgba(12, 12, 18, 0.78) !important;
+    backdrop-filter: blur(20px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 16px !important;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+        0 0 60px -15px rgba(99, 102, 241, 0.15) !important;
+    z-index: 2147483647 !important;
+    font-family: 'Inter', -apple-system, system-ui, sans-serif !important;
+    color: #e0e0e0 !important;
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+    transition: opacity 0.4s cubic-bezier(.4,0,.2,1),
+                transform 0.4s cubic-bezier(.4,0,.2,1) !important;
+    pointer-events: none !important;
+    box-sizing: border-box !important;
+}
+
+.stratos-hud-visible {
+    opacity: 1 !important;
+    transform: translateY(0) scale(1) !important;
+}
+
+.stratos-hud-fadeout {
+    opacity: 0 !important;
+    transform: translateY(20px) scale(0.96) !important;
+    transition: opacity 1s ease, transform 1s ease !important;
+}
+
+.stratos-hud-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+}
+
+.stratos-hud-icon {
+    font-size: 18px !important;
+    line-height: 1 !important;
+}
+
+.stratos-hud-title {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 2px !important;
+    color: #8b8fa3 !important;
+    flex: 1 !important;
+}
+
+.stratos-hud-status {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    color: #22c55e !important;
+    letter-spacing: 0.5px !important;
+}
+
+.stratos-hud-goal {
+    font-size: 12px !important;
+    color: #b0b4c8 !important;
+    margin-bottom: 12px !important;
+    line-height: 1.45 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+}
+
+.stratos-hud-reasoning-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    margin-bottom: 10px !important;
+    min-height: 24px !important;
+}
+
+.stratos-hud-orb {
+    width: 10px !important;
+    height: 10px !important;
+    border-radius: 50% !important;
+    background: #6366f1 !important;
+    flex-shrink: 0 !important;
+    opacity: 0.3 !important;
+    transition: opacity 0.3s, box-shadow 0.3s !important;
+}
+
+.stratos-hud-orb.active {
+    opacity: 1 !important;
+    animation: stratos-orb-pulse 1.5s ease-in-out infinite !important;
+    box-shadow: 0 0 14px rgba(99, 102, 241, 0.6) !important;
+}
+
+.stratos-hud-reasoning {
+    font-size: 12px !important;
+    color: #94a3b8 !important;
+    line-height: 1.4 !important;
+    flex: 1 !important;
+}
+
+.stratos-hud-step {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    color: #64748b !important;
+    letter-spacing: 1.5px !important;
+    text-align: right !important;
+}
+
+@keyframes stratos-orb-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.8;
+        box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+    }
+    50% {
+        transform: scale(1.4);
+        opacity: 1;
+        box-shadow: 0 0 22px rgba(99, 102, 241, 0.8);
+    }
+}
+
+/* ── Extraction Highlight ──────────────────────── */
+
+.stratos-highlight-extracted {
+    outline: 3px solid #FACC15 !important;
+    outline-offset: 3px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 20px rgba(250, 204, 21, 0.35) !important;
+    transition: outline-color 0.5s ease, box-shadow 0.5s ease !important;
+}
+
+/* ── HUD Toggle Button ──────────────────────────── */
+.stratos-hud-toggle {
+    background: none !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    color: #8b8fa3 !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    padding: 2px 6px !important;
+    border-radius: 6px !important;
+    line-height: 1 !important;
+    transition: background 0.2s, color 0.2s !important;
+    margin-left: 6px !important;
+    flex-shrink: 0 !important;
+}
+.stratos-hud-toggle:hover {
+    background: rgba(255,255,255,0.1) !important;
+    color: #fff !important;
+}
+
+/* ── HUD Body (collapsible) ────────────────────── */
+.stratos-hud-body {
+    overflow: hidden !important;
+    max-height: 200px !important;
+    transition: max-height 0.35s cubic-bezier(.4,0,.2,1),
+                opacity 0.3s ease,
+                margin 0.35s ease !important;
+    opacity: 1 !important;
+}
+
+.stratos-hud-collapsed .stratos-hud-body {
+    max-height: 0 !important;
+    opacity: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.stratos-hud-collapsed {
+    padding-bottom: 12px !important;
+}
+
+.stratos-hud-collapsed .stratos-hud-header {
+    margin-bottom: 0 !important;
+}
