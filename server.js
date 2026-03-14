@@ -296,7 +296,18 @@ app.post('/api/analyze', async (req, res) => {
         res.json({ decision, processingTime: elapsed });
 
     } catch (err) {
-        console.error('🔥 [BRAIN] Unhandled error:', err);
+        console.error('🔥[BRAIN] Unhandled error:', err.message);
+
+        if (err.message.includes('429') || err.message.includes('Quota') || err.message.includes('RESOURCE_EXHAUSTED')) {
+            console.log("⚠️ [BRAIN] Rate limit hit. Sending WAIT signal.");
+            return res.json({
+                success: true,
+                action: "WAIT",
+                targetBoxId: null,
+                elementName: "System Firewall",
+                reasoning: "Cooling down API rate limit. Recalibrating..."
+            });
+        }
         res.status(500).json({ error: err.message || 'Internal server error' });
     }
 });
